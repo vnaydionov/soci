@@ -584,7 +584,7 @@ void test_bytea()
             assert(bin2 == "\\x0d0c0b0a");
         }
 	}
-    std::cout << "test_bytea passed" << std::endl;
+    std::cout << "test bytea passed" << std::endl;
 }
 
 // DDL Creation objects for common tests
@@ -628,6 +628,68 @@ struct table_creator_for_get_affected_rows : table_creator_base
         sql << "create table soci_test(val integer)";
     }
 };
+
+struct table_creator_json : public table_creator_base
+{
+    table_creator_json(session& sql)
+    : table_creator_base(sql)
+    {
+        sql << "drop table if exists soci_json_test;";
+        sql << "create table soci_json_test(data json)";
+    }
+};
+
+// Return 9,2 for 9.2.3
+typedef std::pair<int,int> server_version;
+
+server_version get_postgresql_version(session& sql)
+{
+    std::string version;
+    std::pair<int,int> result;
+    sql << "select version()",into(version);
+    if (sscanf(version.c_str(),"PostgreSQL %i.%i", &result.first, &result.second) < 2)
+    {
+        throw std::runtime_error("Failed to retrieve PostgreSQL version number");
+    }
+    return result;
+}
+
+// Test JSON. Only valid for PostgreSQL Server 9.2++
+void test_json()
+{
+    session sql(backEnd, connectString);
+    server_version version = get_postgresql_version(sql);
+    if ( version >= server_version(9,2))
+    {
+        bool exception = false;
+        std::string result;
+        std::string valid_input = "{\"tool\":\"soci\",\"result\":42}";
+        std::string invalid_input = "{\"tool\":\"other\",\"result\":invalid}";
+
+        table_creator_json tableCreator(sql);
+
+        sql << "insert into soci_json_test (data) values(:data)",use(valid_input);
+        sql << "select data from  soci_json_test",into(result);
+        assert(result == valid_input);
+
+        try
+        {
+            sql << "insert into soci_json_test (data) values(:data)",use(invalid_input);
+        }
+        catch(soci_error& e)
+        {
+            (void)e;
+            exception = true;
+        }
+        assert(exception);
+        std::cout << "test json passed" << std::endl;
+    }
+    else
+    {
+    std::cout << "test json skipped (PostgreSQL >= 9.2 required, found " << version.first << "." << version.second << ")" << std::endl;
+    }
+}
+
 
 //
 // Support for soci Common Tests
@@ -714,6 +776,7 @@ int main(int argc, char** argv)
         test11();
         test12();
         test_bytea();
+        test_json();
 
         std::cout << "\nOK, all tests passed.\n\n";
 

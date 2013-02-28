@@ -158,6 +158,34 @@ namespace soci
 namespace tests
 {
 
+// ensure connection is checked, no crash occurs
+
+#define SOCI_TEST_ENSURE_CONNECTED(sql, method) { \
+    std::string msg; \
+    try { \
+        (sql.method)(); \
+        assert(!"exception expected"); \
+    } catch (soci_error const &e) { msg = e.what(); } \
+    assert(msg.empty() == false); } (void)sql
+
+#define SOCI_TEST_ENSURE_CONNECTED2(sql, method) { \
+    std::string msg; \
+    try { std::string seq; long v(0); \
+        (sql.method)(seq, v); \
+        assert(!"exception expected"); \
+    } catch (soci_error const &e) { msg = e.what(); } \
+    assert(msg.empty() == false); } (void)sql
+
+inline bool equal_approx(double const a, double const b)
+{
+    // The formula taken from CATCH test framework
+    // https://github.com/philsquared/Catch/
+    // Thanks to Richard Harris for his help refining this formula
+    double const epsilon(std::numeric_limits<float>::epsilon() * 100);
+    double const scale(1.0);
+    return std::fabs(a - b) < epsilon * (scale + (std::max)(std::fabs(a), std::fabs(b)));
+}
+
 // TODO: improve cleanup capabilities by subtypes, soci_test name may be omitted --mloskot
 //       i.e. optional ctor param accepting custom table name
 class table_creator_base
@@ -307,6 +335,7 @@ public:
         test30();
         test31();
         test_get_affected_rows();
+        test_query_transformation();
         test_pull5();
         test_issue67();
     }
@@ -317,35 +346,6 @@ private:
     std::string const connectString_;
 
 typedef std::auto_ptr<table_creator_base> auto_table_creator;
-
-
-inline bool equal_approx(double const a, double const b)
-{
-    // The formula taken from CATCH test framework
-    // https://github.com/philsquared/Catch/
-    // Thanks to Richard Harris for his help refining this formula
-    double const epsilon(std::numeric_limits<float>::epsilon() * 100);
-    double const scale(1.0);
-    return std::fabs(a - b) < epsilon * (scale + (std::max)(std::fabs(a), std::fabs(b)));
-}
-
-// ensure connection is checked, no crash occurs
-
-#define SOCI_TEST_ENSURE_CONNECTED(sql, method) { \
-    std::string msg; \
-    try { \
-        (sql.method)(); \
-        assert(!"exception expected"); \
-    } catch (soci_error const &e) { msg = e.what(); } \
-    assert(msg.empty() == false); } (void)sql
-
-#define SOCI_TEST_ENSURE_CONNECTED2(sql, method) { \
-    std::string msg; \
-    try { std::string seq; long v(0); \
-        (sql.method)(seq, v); \
-        assert(!"exception expected"); \
-    } catch (soci_error const &e) { msg = e.what(); } \
-    assert(msg.empty() == false); } (void)sql
 
 void test0()
 {
@@ -3562,6 +3562,61 @@ void test31()
         }
     }
     std::cout << "test 31 passed\n";
+}
+
+// Issue 66 - test query transformation callback feature
+static std::string lower_than_g(std::string query)
+{
+    return query + " WHERE c < 'g'";
+}
+
+struct where_condition : std::unary_function<std::string, std::string>
+{
+    where_condition(std::string const& where)
+        : where_(where)
+    {}
+
+    result_type operator()(argument_type query) const
+    {
+        return query + " WHERE " + where_;
+    }
+
+    std::string where_;
+};
+
+void test_query_transformation()
+{
+    session sql(backEndFactory_, connectString_);
+    {
+        // create and populate the test table
+        auto_table_creator tableCreator(tc_.table_creator_1(sql));
+
+        char c;
+        for (c = 'a'; c <= 'z'; ++c)
+        {
+            sql << "insert into soci_test(c) values(\'" << c << "\')";
+        }
+        
+        char const* query = "select count(*) from soci_test";
+        {
+            sql.set_query_transformation(lower_than_g);
+            int count;
+            sql << query, into(count);
+
+            assert(count == 'g' - 'a');
+        }
+        {
+            sql.set_query_transformation(where_condition("c > 'g' AND c < 'j'"));
+            int count = 0;
+            sql << query, into(count);
+            assert(count == 'j' - 'h');
+            count = 0;
+            sql.set_query_transformation(where_condition("c > 's' AND c <= 'z'"));
+            sql << query, into(count);
+            assert(count == 'z' - 's');
+        }
+    }
+    std::cout << "test test_query_transformation passed" << std::endl;
 }
 
 // Originally, submitted to SQLite3 backend and later moved to common test.
