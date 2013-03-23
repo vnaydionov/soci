@@ -699,7 +699,7 @@ void test3()
             short sh;
             for (sh = 0; sh != rowsToTest; ++sh)
             {
-                sql << "insert into soci_test(sh) values(\'" << sh << "\')";
+                sql << "insert into soci_test(sh) values(" << sh << ")";
             }
 
             int count;
@@ -741,7 +741,7 @@ void test3()
             }
         }
 
-        // repeated fetch and bulk fetch of int
+        // repeated fetch and bulk fetch of int (4-bytes)
         {
             // create and populate the test table
             auto_table_creator tableCreator(tc_.table_creator_1(sql));
@@ -750,7 +750,7 @@ void test3()
             int i;
             for (i = 0; i != rowsToTest; ++i)
             {
-                sql << "insert into soci_test(id) values(\'" << i << "\')";
+                sql << "insert into soci_test(id) values(" << i << ")";
             }
 
             int count;
@@ -810,16 +810,16 @@ void test3()
             }
         }
 
-        // repeated fetch and bulk fetch of unsigned long
+        // repeated fetch and bulk fetch of unsigned int (4-bytes)
         {
             // create and populate the test table
             auto_table_creator tableCreator(tc_.table_creator_1(sql));
 
-            unsigned long const rowsToTest = 100;
-            unsigned long ul;
+            unsigned int const rowsToTest = 100;
+            unsigned int ul;
             for (ul = 0; ul != rowsToTest; ++ul)
             {
-                sql << "insert into soci_test(ul) values(\'" << ul << "\')";
+                sql << "insert into soci_test(ul) values(" << ul << ")";
             }
 
             int count;
@@ -827,7 +827,7 @@ void test3()
             assert(count == static_cast<int>(rowsToTest));
 
             {
-                unsigned long ul2 = 0;
+                unsigned int ul2 = 0;
 
                 statement st = (sql.prepare <<
                     "select ul from soci_test order by ul", into(ul));
@@ -841,9 +841,9 @@ void test3()
                 assert(ul2 == rowsToTest);
             }
             {
-                unsigned long ul2 = 0;
+                unsigned int ul2 = 0;
 
-                std::vector<unsigned long> vec(8);
+                std::vector<unsigned int> vec(8);
                 statement st = (sql.prepare <<
                     "select ul from soci_test order by ul", into(vec));
                 st.execute();
@@ -870,7 +870,7 @@ void test3()
             double d = 0.0;
             for (int i = 0; i != rowsToTest; ++i)
             {
-                sql << "insert into soci_test(d) values(\'" << d << "\')";
+                sql << "insert into soci_test(d) values(" << d << ")";
                 d += 0.6;
             }
 
@@ -1572,11 +1572,11 @@ void test8()
             assert(v2[3] == 2000000000);
         }
 
-        // test for unsigned long
+        // test for unsigned int
         {
             auto_table_creator tableCreator(tc_.table_creator_1(sql));
 
-            std::vector<unsigned long> v;
+            std::vector<unsigned int> v;
             v.push_back(0);
             v.push_back(1);
             v.push_back(123);
@@ -1584,7 +1584,7 @@ void test8()
 
             sql << "insert into soci_test(ul) values(:ul)", use(v);
 
-            std::vector<unsigned long> v2(4);
+            std::vector<unsigned int> v2(4);
 
             sql << "select ul from soci_test order by ul", into(v2);
             assert(v2.size() == 4);
@@ -3565,6 +3565,11 @@ void test31()
 }
 
 // Issue 66 - test query transformation callback feature
+static std::string no_op_transform(std::string query)
+{
+    return query;
+}
+
 static std::string lower_than_g(std::string query)
 {
     return query + " WHERE c < 'g'";
@@ -3591,20 +3596,30 @@ void test_query_transformation()
         // create and populate the test table
         auto_table_creator tableCreator(tc_.table_creator_1(sql));
 
-        char c;
-        for (c = 'a'; c <= 'z'; ++c)
+        for (char c = 'a'; c <= 'z'; ++c)
         {
             sql << "insert into soci_test(c) values(\'" << c << "\')";
         }
         
         char const* query = "select count(*) from soci_test";
+
+        // free function, no-op
+        {
+            sql.set_query_transformation(no_op_transform);
+            int count;
+            sql << query, into(count);
+            assert(count == 'z' - 'a' + 1);
+        }
+
+        // free function
         {
             sql.set_query_transformation(lower_than_g);
             int count;
             sql << query, into(count);
-
             assert(count == 'g' - 'a');
         }
+
+        // function object with state
         {
             sql.set_query_transformation(where_condition("c > 'g' AND c < 'j'"));
             int count = 0;
@@ -3615,8 +3630,68 @@ void test_query_transformation()
             sql << query, into(count);
             assert(count == 'z' - 's');
         }
+
+// Bug in Visual Studio __cplusplus still means C++03
+// https://connect.microsoft.com/VisualStudio/feedback/details/763051/
+#if defined _MSC_VER && _MSC_VER>=1600
+#define SOCI_HAVE_CPP11 1
+#elif __cplusplus >= 201103L
+#define SOCI_HAVE_CPP11 1
+#else
+#undef SOCI_HAVE_CPP11
+#endif
+
+#ifdef SOCI_HAVE_CPP11
+        // lambda
+        {
+            sql.set_query_transformation(
+                [](std::string const& query) {
+                    return query + " WHERE c > 'g' AND c < 'j'";
+            });
+
+            int count = 0;
+            sql << query, into(count);
+            assert(count == 'j' - 'h');
+        }
+#endif
+#undef SOCI_HAVE_CPP11
+
+        // prepared statements
+
+        // constant effect (pre-prepare set transformation)
+        {
+            // set transformation after statement is prepared
+            sql.set_query_transformation(lower_than_g);
+            // prepare statement
+            int count;
+            statement st = (sql.prepare << query, into(count));
+            // observe transformation effect
+            st.execute(true);
+            assert(count == 'g' - 'a');
+            // reset transformation
+            sql.set_query_transformation(no_op_transform);
+            // observe the same transformation, no-op set above has no effect
+            count = 0;
+            st.execute(true);
+            assert(count == 'g' - 'a');
+        }
+
+        // no effect (post-prepare set transformation)
+        {
+            // reset
+            sql.set_query_transformation(no_op_transform);
+
+            // prepare statement
+            int count;
+            statement st = (sql.prepare << query, into(count));
+            // set transformation after statement is prepared
+            sql.set_query_transformation(lower_than_g);
+            // observe no effect of WHERE clause injection
+            st.execute(true);
+            assert(count == 'z' - 'a' + 1);
+        }
     }
-    std::cout << "test test_query_transformation passed" << std::endl;
+    std::cout << "test query_transformation passed" << std::endl;
 }
 
 // Originally, submitted to SQLite3 backend and later moved to common test.
@@ -3680,7 +3755,7 @@ void test_pull5()
         sql.begin(); // no crash expected
     }
 
-    std::cout << "test_pull5 passed\n";
+    std::cout << "test pull-5 passed\n";
 }
 
 // issue 67 - Allocated statement backend memory leaks on exception
@@ -3705,7 +3780,7 @@ void test_issue67()
         {
             (void)e;
             assert("expected exception caught");
-            std::cout << "test_issue67 passed - check memory debugger output for leaks" << std::endl;
+            std::cout << "test issue-67 passed - check memory debugger output for leaks" << std::endl;
         }
     }
 

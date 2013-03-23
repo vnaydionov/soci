@@ -556,15 +556,15 @@ struct bytea_table_creator : public table_creator_base
 
 void test_bytea()
 {
-	{
+    {
         session sql(backEnd, connectString);
-		bytea_table_creator tableCreator(sql);
+        bytea_table_creator tableCreator(sql);
 
         int v = 0x0A0B0C0D;
         unsigned char* b = reinterpret_cast<unsigned char*>(&v);
         std::string data;
         std::copy(b, b + sizeof(v), std::back_inserter(data));
-		{
+        {
 
             sql << "insert into soci_test(val) values(:val)", use(data);
 
@@ -583,52 +583,11 @@ void test_bytea()
             std::string bin2 = r.get<std::string>(0);
             assert(bin2 == "\\x0d0c0b0a");
         }
-	}
+    }
     std::cout << "test bytea passed" << std::endl;
 }
 
-// DDL Creation objects for common tests
-struct table_creator_one : public table_creator_base
-{
-    table_creator_one(session & sql)
-        : table_creator_base(sql)
-    {
-        sql << "create table soci_test(id integer, val integer, c char, "
-                 "str varchar(20), sh int2, ul numeric(20), d float8, "
-                 "tm timestamp, i1 integer, i2 integer, i3 integer, "
-                 "name varchar(20))";
-    }
-};
-
-struct table_creator_two : public table_creator_base
-{
-    table_creator_two(session & sql)
-        : table_creator_base(sql)
-    {
-        sql  << "create table soci_test(num_float float8, num_int integer,"
-                     " name varchar(20), sometime timestamp, chr char)";
-    }
-};
-
-struct table_creator_three : public table_creator_base
-{
-    table_creator_three(session & sql)
-        : table_creator_base(sql)
-    {
-        sql << "create table soci_test(name varchar(100) not null, "
-            "phone varchar(15))";
-    }
-};
-
-struct table_creator_for_get_affected_rows : table_creator_base
-{
-    table_creator_for_get_affected_rows(session & sql)
-        : table_creator_base(sql)
-    {
-        sql << "create table soci_test(val integer)";
-    }
-};
-
+// json
 struct table_creator_json : public table_creator_base
 {
     table_creator_json(session& sql)
@@ -690,11 +649,53 @@ void test_json()
     }
 }
 
-
 //
 // Support for soci Common Tests
 //
 
+// DDL Creation objects for common tests
+struct table_creator_one : public table_creator_base
+{
+    table_creator_one(session & sql)
+        : table_creator_base(sql)
+    {
+        sql << "create table soci_test(id integer, val integer, c char, "
+                 "str varchar(20), sh int2, ul numeric(20), d float8, "
+                 "tm timestamp, i1 integer, i2 integer, i3 integer, "
+                 "name varchar(20))";
+    }
+};
+
+struct table_creator_two : public table_creator_base
+{
+    table_creator_two(session & sql)
+        : table_creator_base(sql)
+    {
+        sql  << "create table soci_test(num_float float8, num_int integer,"
+                     " name varchar(20), sometime timestamp, chr char)";
+    }
+};
+
+struct table_creator_three : public table_creator_base
+{
+    table_creator_three(session & sql)
+        : table_creator_base(sql)
+    {
+        sql << "create table soci_test(name varchar(100) not null, "
+            "phone varchar(15))";
+    }
+};
+
+struct table_creator_for_get_affected_rows : table_creator_base
+{
+    table_creator_for_get_affected_rows(session & sql)
+        : table_creator_base(sql)
+    {
+        sql << "create table soci_test(val integer)";
+    }
+};
+
+// Common tests context
 class test_context : public test_context_base
 {
 public:
@@ -727,7 +728,6 @@ public:
         return "timestamptz(\'" + datdt_string + "\')";
     }
 };
-
 
 int main(int argc, char** argv)
 {

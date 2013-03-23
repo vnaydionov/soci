@@ -1,4 +1,4 @@
-################################################################################
+###############################################################################
 #
 # This file is part of CMake configuration for SOCI library
 #
@@ -7,7 +7,7 @@
 # (See accompanying file LICENSE_1_0.txt or copy at
 # http://www.boost.org/LICENSE_1_0.txt)
 #
-################################################################################
+###############################################################################
 
 colormsg(_HIBLUE_ "Configuring SOCI core library:")
 
@@ -42,7 +42,7 @@ if(Boost_FOUND)
 
   if(Boost_DATE_TIME_FOUND)
     list(APPEND SOCI_CORE_DEPENDENCIES ${Boost_DATE_TIME_LIBRARY})
-	list(APPEND SOCI_COMPILE_DEFINITIONS "HAVE_BOOST_DATE_TIME=1")
+    list(APPEND SOCI_COMPILE_DEFINITIONS "HAVE_BOOST_DATE_TIME=1")
   endif()
 
   set_property(DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -103,19 +103,23 @@ add_definitions(-DSOCI_LIB_PREFIX="${CMAKE_SHARED_LIBRARY_PREFIX}soci_"
 #
 # Core static library
 #
-add_library(${SOCI_CORE_TARGET}-static STATIC ${SOCI_CORE_HEADERS} ${SOCI_CORE_SOURCES})
+if (SOCI_STATIC)
+  set(SOCI_CORE_TARGET_STATIC ${SOCI_CORE_TARGET}_static)
 
-set_target_properties(${SOCI_CORE_TARGET}-static
-  PROPERTIES
-  OUTPUT_NAME ${SOCI_CORE_TARGET_OUTPUT_NAME}
-  PREFIX "lib"
-  CLEAN_DIRECT_OUTPUT 1)
+  add_library(${SOCI_CORE_TARGET_STATIC} STATIC ${SOCI_CORE_HEADERS} ${SOCI_CORE_SOURCES})
+
+  set_target_properties(${SOCI_CORE_TARGET_STATIC}
+    PROPERTIES
+    OUTPUT_NAME ${SOCI_CORE_TARGET_OUTPUT_NAME}
+    PREFIX "lib"
+    CLEAN_DIRECT_OUTPUT 1)
+endif()
 
 #
 # Core installation
 #
 install(FILES ${SOCI_CORE_HEADERS} DESTINATION ${INCLUDEDIR}/${PROJECTNAMEL})
-install(TARGETS ${SOCI_CORE_TARGET} ${SOCI_CORE_TARGET}-static
+install(TARGETS ${SOCI_CORE_TARGET} ${SOCI_CORE_TARGET_STATIC}
   RUNTIME DESTINATION ${BINDIR}
   LIBRARY DESTINATION ${LIBDIR}
   ARCHIVE DESTINATION ${LIBDIR})
@@ -131,4 +135,7 @@ soci_report_directory_property(COMPILE_DEFINITIONS)
 
 # Export core target name to make it visible by backends
 set(SOCI_CORE_TARGET ${SOCI_CORE_TARGET} PARENT_SCOPE)
+if (SOCI_STATIC)
+  set(SOCI_CORE_TARGET_STATIC ${SOCI_CORE_TARGET_STATIC} PARENT_SCOPE)
+endif()
 set(SOCI_CORE_STATIC_DEPENDENCIES ${SOCI_CORE_DEPENDENCIES} PARENT_SCOPE)
