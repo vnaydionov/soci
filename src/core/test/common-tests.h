@@ -336,8 +336,12 @@ public:
         test31();
         test_get_affected_rows();
         test_query_transformation();
+        test_query_transformation_with_connection_pool();
         test_pull5();
         test_issue67();
+        test_prepared_insert_with_orm_type();
+        test_issue154();
+        test_placeholder_partial_matching_with_orm_type();
     }
 
 private:
@@ -1144,7 +1148,7 @@ void test5()
 void test6()
 {
 // Note: this functionality is not available with older PostgreSQL
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
     {
         session sql(backEndFactory_, connectString_);
 
@@ -1380,7 +1384,7 @@ void test6()
     }
 
     std::cout << "test 6 passed" << std::endl;
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 }
 
 // test for multiple use (and into) elements
@@ -1395,7 +1399,7 @@ void test7()
             int i2 = 6;
             int i3 = 7;
 
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
 
             sql << "insert into soci_test(i1, i2, i3) values(:i1, :i2, :i3)",
                 use(i1), use(i2), use(i3);
@@ -1405,7 +1409,7 @@ void test7()
 
             sql << "insert into soci_test(i1, i2, i3) values(5, 6, 7)";
 
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
             i1 = 0;
             i2 = 0;
@@ -1424,7 +1428,7 @@ void test7()
             i2 = 0;
             i3 = 0;
 
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
 
             statement st = (sql.prepare
                 << "insert into soci_test(i1, i2, i3) values(:i1, :i2, :i3)",
@@ -1450,7 +1454,7 @@ void test7()
             sql << "insert into soci_test(i1, i2, i3) values(4, 5, 6)";
             sql << "insert into soci_test(i1, i2, i3) values(7, 8, 9)";
 
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
             std::vector<int> v1(5);
             std::vector<int> v2(5);
@@ -1481,7 +1485,7 @@ void test7()
 void test8()
 {
 // Not supported with older PostgreSQL
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
 
     {
         session sql(backEndFactory_, connectString_);
@@ -1690,7 +1694,7 @@ void test8()
 
     std::cout << "test 8 passed" << std::endl;
 
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
 }
 
@@ -1698,7 +1702,7 @@ void test8()
 void test9()
 {
 // Not supported with older PostgreSQL
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
 
     {
         session sql(backEndFactory_, connectString_);
@@ -1771,7 +1775,7 @@ void test9()
 
     std::cout << "test 9 passed" << std::endl;
 
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
 }
 
@@ -1849,7 +1853,7 @@ void test10()
 // test of use elements with indicators
 void test11()
 {
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
     {
         session sql(backEndFactory_, connectString_);
 
@@ -1917,7 +1921,7 @@ void test11()
 
     std::cout << "test 11 passed" << std::endl;
 
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 }
 
 // Dynamic binding to Row objects
@@ -2052,7 +2056,7 @@ void test13()
     sql << "insert into soci_test(id, val) values(2, 20)";
     sql << "insert into soci_test(id, val) values(3, 30)";
 
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
     {
         int id = 2;
         row r;
@@ -2095,7 +2099,7 @@ void test13()
         assert(r.get_properties(0).get_data_type() == dt_integer);
         assert(r.get<int>(0) == 20);
     }
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
     std::cout << "test 13 passed" << std::endl;
 }
@@ -2299,10 +2303,60 @@ void test15()
     std::cout << "test 15 passed" << std::endl;
 }
 
+void test_prepared_insert_with_orm_type()
+{
+    {
+        session sql(backEndFactory_, connectString_);
+
+        sql.uppercase_column_names(true);
+        auto_table_creator tableCreator(tc_.table_creator_3(sql));
+
+        PhonebookEntry temp;
+        PhonebookEntry e1 = { "name1", "phone1" };
+        PhonebookEntry e2 = { "name2", "phone2" };
+
+        //sql << "insert into soci_test values (:NAME, :PHONE)", use(temp);
+        statement insertStatement = (sql.prepare << "insert into soci_test values (:NAME, :PHONE)", use(temp));
+
+        temp = e1;
+        insertStatement.execute(true);
+        temp = e2;
+        insertStatement.execute(true);
+
+        int count = 0;
+
+        sql << "select count(*) from soci_test where NAME in ('name1', 'name2')", into(count);
+
+        assert(count == 2);
+    }
+
+    std::cout << "test test_prepared_insert_with_orm_type passed" << std::endl;
+}
+
+void test_placeholder_partial_matching_with_orm_type()
+{
+    {
+        session sql(backEndFactory_, connectString_);
+        sql.uppercase_column_names(true);
+        auto_table_creator tableCreator(tc_.table_creator_3(sql));
+
+        PhonebookEntry in = { "name1", "phone1" };
+        std::string name = "nameA";
+        sql << "insert into soci_test values (:NAMED, :PHONE)", use(in), use(name, "NAMED");
+
+        PhonebookEntry out;
+        sql << "select * from soci_test where PHONE = 'phone1'", into(out);
+        assert(out.name == "nameA");
+        assert(out.phone == "phone1");
+    }
+
+    std::cout << "test test_placeholder_partial_matching_with_orm_type passed" << std::endl;
+}
+
 // test for bulk fetch with single use
 void test16()
 {
-#ifndef SOCI_PGSQL_NOPARAMS
+#ifndef SOCI_POSTGRESQL_NOPARAMS
     {
         session sql(backEndFactory_, connectString_);
 
@@ -2324,7 +2378,7 @@ void test16()
         assert(names[1] == "john");
         assert(names[2] == "julian");
     }
-#endif // SOCI_PGSQL_NOPARAMS
+#endif // SOCI_POSTGRESQL_NOPARAMS
 
     std::cout << "test 16 passed" << std::endl;
 }
@@ -2569,6 +2623,41 @@ void test20()
                 assert(r2.get<std::string>("NAME") == "Robert");
                 assert(r2.get<std::string>("CHR") == "b");
             }
+        }
+
+        {
+            // Non-empty rowset with NULL values
+            sql << "insert into soci_test "
+                << "(num_int, num_float , name, sometime, chr) "
+                << "values (0, NULL, NULL, NULL, NULL)";
+
+            rowset<row> rs = (sql.prepare
+                     << "select num_int, num_float, name, sometime, chr "
+                     << "from soci_test where num_int = 0");
+
+            rowset<row>::const_iterator it = rs.begin();
+            assert(it != rs.end());
+
+            //
+            // First row
+            //
+            row const& r1 = (*it);
+
+            // Properties
+            assert(r1.size() == 5);
+            assert(r1.get_properties(0).get_data_type() == dt_integer);
+            assert(r1.get_properties(1).get_data_type() == dt_double);
+            assert(r1.get_properties(2).get_data_type() == dt_string);
+            assert(r1.get_properties(3).get_data_type() == dt_date);
+            assert(r1.get_properties(4).get_data_type() == dt_string);
+
+            // Data
+            assert(r1.get_indicator(0) == soci::i_ok);
+            assert(r1.get<int>(0) == 0);
+            assert(r1.get_indicator(1) == soci::i_null);
+            assert(r1.get_indicator(2) == soci::i_null);
+            assert(r1.get_indicator(3) == soci::i_null);
+            assert(r1.get_indicator(4) == soci::i_null);
         }
     }
 
@@ -3589,47 +3678,46 @@ struct where_condition : std::unary_function<std::string, std::string>
     std::string where_;
 };
 
-void test_query_transformation()
+
+void run_query_transformation_test(session& sql)
 {
-    session sql(backEndFactory_, connectString_);
+    // create and populate the test table
+    auto_table_creator tableCreator(tc_.table_creator_1(sql));
+
+    for (char c = 'a'; c <= 'z'; ++c)
     {
-        // create and populate the test table
-        auto_table_creator tableCreator(tc_.table_creator_1(sql));
+        sql << "insert into soci_test(c) values(\'" << c << "\')";
+    }
+    
+    char const* query = "select count(*) from soci_test";
 
-        for (char c = 'a'; c <= 'z'; ++c)
-        {
-            sql << "insert into soci_test(c) values(\'" << c << "\')";
-        }
-        
-        char const* query = "select count(*) from soci_test";
+    // free function, no-op
+    {
+        sql.set_query_transformation(no_op_transform);
+        int count;
+        sql << query, into(count);
+        assert(count == 'z' - 'a' + 1);
+    }
 
-        // free function, no-op
-        {
-            sql.set_query_transformation(no_op_transform);
-            int count;
-            sql << query, into(count);
-            assert(count == 'z' - 'a' + 1);
-        }
+    // free function
+    {
+        sql.set_query_transformation(lower_than_g);
+        int count;
+        sql << query, into(count);
+        assert(count == 'g' - 'a');
+    }
 
-        // free function
-        {
-            sql.set_query_transformation(lower_than_g);
-            int count;
-            sql << query, into(count);
-            assert(count == 'g' - 'a');
-        }
-
-        // function object with state
-        {
-            sql.set_query_transformation(where_condition("c > 'g' AND c < 'j'"));
-            int count = 0;
-            sql << query, into(count);
-            assert(count == 'j' - 'h');
-            count = 0;
-            sql.set_query_transformation(where_condition("c > 's' AND c <= 'z'"));
-            sql << query, into(count);
-            assert(count == 'z' - 's');
-        }
+    // function object with state
+    {
+        sql.set_query_transformation(where_condition("c > 'g' AND c < 'j'"));
+        int count = 0;
+        sql << query, into(count);
+        assert(count == 'j' - 'h');
+        count = 0;
+        sql.set_query_transformation(where_condition("c > 's' AND c <= 'z'"));
+        sql << query, into(count);
+        assert(count == 'z' - 's');
+    }
 
 // Bug in Visual Studio __cplusplus still means C++03
 // https://connect.microsoft.com/VisualStudio/feedback/details/763051/
@@ -3642,56 +3730,81 @@ void test_query_transformation()
 #endif
 
 #ifdef SOCI_HAVE_CPP11
-        // lambda
-        {
-            sql.set_query_transformation(
-                [](std::string const& query) {
-                    return query + " WHERE c > 'g' AND c < 'j'";
-            });
+    // lambda
+    {
+        sql.set_query_transformation(
+            [](std::string const& query) {
+                return query + " WHERE c > 'g' AND c < 'j'";
+        });
 
-            int count = 0;
-            sql << query, into(count);
-            assert(count == 'j' - 'h');
-        }
+        int count = 0;
+        sql << query, into(count);
+        assert(count == 'j' - 'h');
+    }
 #endif
 #undef SOCI_HAVE_CPP11
 
-        // prepared statements
+    // prepared statements
 
-        // constant effect (pre-prepare set transformation)
-        {
-            // set transformation after statement is prepared
-            sql.set_query_transformation(lower_than_g);
-            // prepare statement
-            int count;
-            statement st = (sql.prepare << query, into(count));
-            // observe transformation effect
-            st.execute(true);
-            assert(count == 'g' - 'a');
-            // reset transformation
-            sql.set_query_transformation(no_op_transform);
-            // observe the same transformation, no-op set above has no effect
-            count = 0;
-            st.execute(true);
-            assert(count == 'g' - 'a');
-        }
+    // constant effect (pre-prepare set transformation)
+    {
+        // set transformation after statement is prepared
+        sql.set_query_transformation(lower_than_g);
+        // prepare statement
+        int count;
+        statement st = (sql.prepare << query, into(count));
+        // observe transformation effect
+        st.execute(true);
+        assert(count == 'g' - 'a');
+        // reset transformation
+        sql.set_query_transformation(no_op_transform);
+        // observe the same transformation, no-op set above has no effect
+        count = 0;
+        st.execute(true);
+        assert(count == 'g' - 'a');
+    }
 
-        // no effect (post-prepare set transformation)
-        {
-            // reset
-            sql.set_query_transformation(no_op_transform);
+    // no effect (post-prepare set transformation)
+    {
+        // reset
+        sql.set_query_transformation(no_op_transform);
 
-            // prepare statement
-            int count;
-            statement st = (sql.prepare << query, into(count));
-            // set transformation after statement is prepared
-            sql.set_query_transformation(lower_than_g);
-            // observe no effect of WHERE clause injection
-            st.execute(true);
-            assert(count == 'z' - 'a' + 1);
-        }
+        // prepare statement
+        int count;
+        statement st = (sql.prepare << query, into(count));
+        // set transformation after statement is prepared
+        sql.set_query_transformation(lower_than_g);
+        // observe no effect of WHERE clause injection
+        st.execute(true);
+        assert(count == 'z' - 'a' + 1);
+    }
+}
+
+void test_query_transformation()
+{
+    {
+        session sql(backEndFactory_, connectString_);
+        run_query_transformation_test(sql);
     }
     std::cout << "test query_transformation passed" << std::endl;
+}
+void test_query_transformation_with_connection_pool()
+{
+    {
+        // phase 1: preparation
+        const size_t pool_size = 10;
+        connection_pool pool(pool_size);
+
+        for (std::size_t i = 0; i != pool_size; ++i)
+        {
+            session & sql = pool.at(i);
+            sql.open(backEndFactory_, connectString_);
+        }
+
+        session sql(pool);
+        run_query_transformation_test(sql);
+    }
+    std::cout << "test query_transformation with connection pool passed" << std::endl;
 }
 
 // Originally, submitted to SQLite3 backend and later moved to common test.
@@ -3732,6 +3845,36 @@ void test_get_affected_rows()
         st3.execute(true);
 
         assert(st3.get_affected_rows() == 5);
+
+        std::vector<int> v(5, 0);
+        for (std::size_t i = 0; i < v.size(); ++i)
+        {
+            v[i] = (7 + i);
+        }
+        
+        // test affected rows for bulk operations.
+        statement st4 = (sql.prepare <<
+            "delete from soci_test where val = :v", use(v));
+        st4.execute(true);
+
+        assert(st4.get_affected_rows() == 5);
+
+        std::vector<std::string> w(2, "1");
+        w[1] = "a"; // this invalid value may cause an exception.
+        statement st5 = (sql.prepare <<
+            "insert into soci_test(val) values(:val)", use(w));
+        try { st5.execute(true); } 
+        catch(...) {}
+
+        // confirm the partial insertion.
+        int val = 0;
+        sql << "select count(val) from soci_test", into(val);
+        if(val != 0)
+        {        
+            // test the preserved 'number of rows 
+            // affected' after a potential failure.
+            assert(st5.get_affected_rows() != 0);
+        }
     }
 
     std::cout << "test get_affected_rows passed" << std::endl;
@@ -3784,7 +3927,49 @@ void test_issue67()
         }
     }
 
-}; // class common_tests
+}
+
+// issue 154 - Calling undefine_and_bind and then define_and_bind causes a leak.
+// If the test runs under memory debugger and it passes, then
+// soci::details::standard_use_type_backend and vector_use_type_backend must not leak
+void test_issue154()
+{
+    session sql(backEndFactory_, connectString_);
+    auto_table_creator tableCreator(tc_.table_creator_1(sql));
+    sql << "insert into soci_test(id) values (1)";
+    {
+        int id = 1;
+        int val = 0;
+        statement st(sql);
+        st.exchange(use(id));
+        st.alloc();
+        st.prepare("select id from soci_test where id = :1");
+        st.define_and_bind();
+        st.undefine_and_bind();
+        st.exchange(soci::into(val));
+        st.define_and_bind();
+        st.execute(true);
+        assert(val == 1);
+    }
+    // vector variation
+    {
+        std::vector<int> ids(1, 2);
+        std::vector<int> vals(1, 1);
+        int val = 0;
+        statement st(sql);
+        st.exchange(use(ids));
+        st.alloc();
+        st.prepare("insert into soci_test(id, val) values (:1, :2)");
+        st.define_and_bind();
+        st.undefine_and_bind();
+        st.exchange(use(vals));
+        st.define_and_bind();
+        st.execute(true);
+        sql << "select val from soci_test where id = 2", into(val);
+        assert(val == 1);
+    }
+    std::cout << "test issue-154 passed - check memory debugger output for leaks" << std::endl;
+}
 
 }; // class common_tests
 
